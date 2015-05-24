@@ -1,0 +1,94 @@
+---
+title: "PracticalMachineLearning-CourseProject"
+author: "Shashank Salvi"
+date: "May 24, 2015"
+output: html_document
+---
+
+***
+
+## Introduction
+
+A large amount of data about personal activity of enthusiasts who take measurements about themselves regularly to improve their health is available. The data comes from the [link](http://groupware.les.inf.puc-rio.br/har).The data contains a "classe" variable (sitting-down, standing-up, standing, walking, and sitting). In this project we will  use data from accelerometers on the belt, forearm, arm, and dumbell to predict the manner in which subject performed the exercise.
+
+***
+
+## Data Preprocessing and Cleaning
+
+```{r, cache = T,results='hide'}
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists("./data/trainData.csv")) {
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile="./data/trainData.csv", method="curl")
+}
+if (!file.exists("./data/testData.csv")) {
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile="./data/testData.csv", method="curl")
+}
+trainRawData <- read.csv("./data/trainData.csv")
+testRawData <- read.csv("./data/testData.csv")
+dim(trainRawData)
+dim(testRawData)
+```
+The training data set contains `r dim(trainRawData)[1]` observations and `r dim(trainRawData)[2]` variables, while the testing data set contains `r dim(testRawData)[1]` observations and `r dim(testRawData)[2]` variables. The “classe” variable in the training set is the outcome to predict.
+
+Remove columns from the data which are not useful for predicting the outcome.
+```{r, cache = T}
+## Removing Columns with NA values
+trainRawData <- trainRawData[, colSums(is.na(trainRawData)) == 0] 
+testRawData <- testRawData[, colSums(is.na(testRawData)) == 0] 
+## Removing unwanted columns from train dataset
+tempVar <- trainRawData$classe
+index <- grepl("^X|timestamp|window", names(trainRawData))
+trainRawData <- trainRawData[, !index]
+trainData <- trainRawData[, sapply(trainRawData, is.numeric)]
+trainData$classe <- tempVar ## Final Training Dataset
+## Removing unwanted columns from test dataset
+index <- grepl("^X|timestamp|window", names(testRawData))
+testRawData <- testRawData[, !index]
+testData <- testRawData[, sapply(testRawData, is.numeric)] ## Final Test Dataset
+```
+
+***
+
+## Prediction Model Creation:
+
+* Data Partioning : Partioning Training data set into two data sets, 70% as Training set, 30% as validation set.
+```{r,cache=TRUE}
+library(caret)
+library(randomForest)
+set.seed(333) # For reproducibile purpose
+indexT <- createDataPartition(trainData$classe, p=0.70, list=F)
+trainSet <- trainData[indexT, ]
+validSet <- trainData[-indexT, ]
+```
+
+* Predictive model for activity recognition is created using Random Forest algorithm since it automatically selects important variables and is robust to correlated covariates & outliers in general.We will use 5-fold cross validation when applying the algorithm.
+
+```{r,cache=TRUE}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainSet, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+* Estimation of the performance of the model on the validation data set.
+Then, we estimate the performance of the model on the validation data set.  
+```{r,cache=TRUE}
+predictRf <- predict(modelRf, validSet)
+confusionMatrix(validSet$classe, predictRf)
+accuracy <- postResample(predictRf, validSet$classe)
+accuracy
+sampleError <- 1 - as.numeric(confusionMatrix(validSet$classe, predictRf)$overall[1])
+sampleError
+```
+
+* The estimated accuracy of the model is 99.45% and the estimated out-of-sample error is 0.54%.
+
+***
+
+## Testing the model
+Now, we apply the model to the original testing data set downloaded from the data source. We remove the `problem_id` column first.  
+```{r, cache = T}
+result <- predict(modelRf, testData[, -length(names(testData))])
+result
+```
